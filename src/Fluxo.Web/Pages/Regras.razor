@@ -1,0 +1,95 @@
+@page "/regras"
+@implements IDisposable
+@inject LedgerService Service
+
+<PageTitle>Regras · Fluxo</PageTitle>
+
+<h1>Regras de categoria</h1>
+<p class="lede">
+    Quando a descrição do lançamento tem o texto da regra, ele vai pra categoria. A sua regra ganha da
+    aprendida, que ganha da que veio pronta. Lançamento que você corrigiu na mão nunca muda sozinho.
+</p>
+
+<section class="panel">
+    <h2>Nova regra</h2>
+    <form class="ruleform" @onsubmit="Add" @onsubmit:preventDefault>
+        <label for="regra-texto">Se a descrição tiver
+            <input id="regra-texto" @bind="_pattern" placeholder="ex.: academia" />
+        </label>
+        <label for="regra-cat">vai pra
+            <select id="regra-cat" @bind="_category">
+                @foreach (var c in Service.Ledger.State.Categories)
+                {
+                    <option value="@c.Id">@c.Name</option>
+                }
+            </select>
+        </label>
+        <button class="btn primary" type="submit">Adicionar</button>
+    </form>
+    @if (_error is not null) { <p class="out">@_error</p> }
+</section>
+
+@foreach (var group in Service.Ledger.State.Rules.GroupBy(r => r.Origin).OrderBy(g => g.Key))
+{
+    <section class="panel">
+        <h2>@Title(group.Key) <span class="count">@group.Count()</span></h2>
+        <ul class="rules">
+            @foreach (var r in group.OrderBy(r => r.Pattern))
+            {
+                <li>
+                    <code>@r.Pattern</code>
+                    <span class="arrow">→</span>
+                    <span>@(Service.Ledger.State.Categories.FirstOrDefault(c => c.Id == r.CategoryId)?.Name ?? r.CategoryId)</span>
+                    <button class="link danger" @onclick="() => Service.Ledger.RemoveRule(r)" aria-label="Remover regra @r.Pattern">Remover</button>
+                </li>
+            }
+        </ul>
+    </section>
+}
+
+<section class="panel danger-zone">
+    <h2>Apagar tudo</h2>
+    <p class="hint">Remove lançamentos, regras, limites e metas deste navegador. Não tem volta.</p>
+    @if (_confirm)
+    {
+        <button class="btn danger" @onclick="Clear">Sim, apagar tudo</button>
+        <button class="btn" @onclick="() => _confirm = false">Cancelar</button>
+    }
+    else
+    {
+        <button class="btn" @onclick="() => _confirm = true">Apagar todos os dados</button>
+    }
+</section>
+
+@code {
+    private string _pattern = "";
+    private string _category = "mercado";
+    private string? _error;
+    private bool _confirm;
+
+    protected override void OnInitialized() => Service.Changed += Refresh;
+
+    private static string Title(RuleOrigin o) => o switch
+    {
+        RuleOrigin.User => "Criadas por você",
+        RuleOrigin.Learned => "Aprendidas com as suas correções",
+        _ => "Prontas",
+    };
+
+    private void Add()
+    {
+        _error = null;
+        if (RuleEngine.MatchText(_pattern).Length < 2) { _error = "Escreva pelo menos duas letras."; return; }
+        Service.Ledger.AddRule(_pattern, _category);
+        _pattern = "";
+    }
+
+    private async Task Clear()
+    {
+        _confirm = false;
+        await Service.ClearAsync();
+    }
+
+    private void Refresh() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Service.Changed -= Refresh;
+}

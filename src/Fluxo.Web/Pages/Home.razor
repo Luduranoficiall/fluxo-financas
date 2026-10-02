@@ -1,0 +1,140 @@
+@page "/"
+@inject LedgerService Service
+@implements IDisposable
+
+<PageTitle>Painel · Fluxo</PageTitle>
+
+@if (Ledger.Transactions.Count == 0)
+{
+    <section class="empty">
+        <h1>Pra onde vai o seu dinheiro?</h1>
+        <p>
+            Exporte o extrato do seu banco em OFX ou CSV e jogue aqui. O Fluxo separa por categoria,
+            aprende com as suas correções e mostra quanto sobra no mês. Tudo roda no seu navegador.
+        </p>
+        <div class="actions">
+            <a class="btn primary" href="importar">Importar meu extrato</a>
+            <button class="btn" @onclick="Service.LoadSampleAsync">Ver com dados de exemplo</button>
+        </div>
+    </section>
+}
+else
+{
+    <div class="pagehead">
+        <h1>Painel</h1>
+        <MonthNav />
+    </div>
+
+    <section class="cards">
+        <article class="card">
+            <span class="label">Entrou</span>
+            <strong class="value in">@Fmt.Brl(_month.Income)</strong>
+            <Delta Current="_month.Income" Previous="_previous.Income" />
+        </article>
+        <article class="card">
+            <span class="label">Saiu</span>
+            <strong class="value out">@Fmt.Brl(_month.Expense)</strong>
+            <Delta Current="_month.Expense" Previous="_previous.Expense" LowerIsBetter="true" />
+        </article>
+        <article class="card">
+            <span class="label">Sobrou</span>
+            <strong class="value @(_month.Balance.IsNegative ? "out" : "")">@Fmt.Brl(_month.Balance)</strong>
+            <span class="hint">@(_month.Income.IsZero ? "Sem entrada neste mês" : $"{Fmt.Percent((double)_month.Balance.Cents / _month.Income.Cents)} do que entrou")</span>
+        </article>
+    </section>
+
+    <section class="grid2">
+        <article class="panel">
+            <h2>Últimos 6 meses</h2>
+            <BarChart Months="_lastMonths" />
+        </article>
+        <article class="panel">
+            <h2>Gastos por categoria</h2>
+            @if (_byCategory.Count == 0)
+            {
+                <p class="muted">Nenhum gasto neste mês.</p>
+            }
+            else
+            {
+                <DonutChart Totals="_byCategory" />
+                @if (_uncategorized > 0)
+                {
+                    <p class="hint"><a href="lancamentos?sem-categoria=1">@_uncategorized lançamento(s) sem categoria</a>. Corrigir um ensina o app a acertar os próximos.</p>
+                }
+            }
+        </article>
+    </section>
+
+    <section class="grid2">
+        <article class="panel">
+            <div class="panelhead"><h2>Limites do mês</h2><a href="metas">Ajustar</a></div>
+            @if (_budgets.Count == 0)
+            {
+                <p class="muted">Nenhum limite definido. <a href="metas">Defina quanto quer gastar por categoria</a>.</p>
+            }
+            @foreach (var b in _budgets)
+            {
+                <div class="budget">
+                    <div class="row">
+                        <span>@b.Category.Name</span>
+                        <span class="num">@Fmt.Brl(b.Spent) de @Fmt.Brl(b.Limit)</span>
+                    </div>
+                    <div class="bar"><div class="fill @b.Status.ToString().ToLowerInvariant()" style="width:@Pct(b.Percent)"></div></div>
+                    <span class="hint">@BudgetHint(b)</span>
+                </div>
+            }
+        </article>
+        <article class="panel">
+            <div class="panelhead"><h2>Metas de economia</h2><a href="metas">Ver todas</a></div>
+            @if (Ledger.State.Goals.Count == 0)
+            {
+                <p class="muted">Nenhuma meta ainda. <a href="metas">Crie uma</a>.</p>
+            }
+            @foreach (var g in Ledger.State.Goals.Select(g => ReportBuilder.Goal(g, LedgerService.Today)))
+            {
+                <div class="budget">
+                    <div class="row"><span>@g.Goal.Name</span><span class="num">@Fmt.Percent(g.Percent)</span></div>
+                    <div class="bar"><div class="fill ok" style="width:@Pct(g.Percent)"></div></div>
+                    <span class="hint">@(g.Done ? "Meta batida." : $"Guardar {Fmt.Brl(g.MonthlyNeeded)} por mês até {g.Goal.Deadline:MM/yyyy}.")</span>
+                </div>
+            }
+        </article>
+    </section>
+}
+
+@code {
+    private Ledger Ledger => Service.Ledger;
+    private MonthSummary _month = new(0, 1, Money.Zero, Money.Zero);
+    private MonthSummary _previous = new(0, 1, Money.Zero, Money.Zero);
+    private IReadOnlyList<MonthSummary> _lastMonths = [];
+    private IReadOnlyList<CategoryTotal> _byCategory = [];
+    private IReadOnlyList<BudgetProgress> _budgets = [];
+    private int _uncategorized;
+
+    protected override void OnParametersSet() => Compute();
+    protected override void OnInitialized() => Service.Changed += Recompute;
+    private void Recompute() { Compute(); InvokeAsync(StateHasChanged); }
+
+    private void Compute()
+    {
+        var m = Service.Month;
+        var txs = Ledger.Transactions;
+        _month = ReportBuilder.Month(txs, m.Year, m.Month);
+        var prev = m.AddMonths(-1);
+        _previous = ReportBuilder.Month(txs, prev.Year, prev.Month);
+        _lastMonths = ReportBuilder.LastMonths(txs, m.Year, m.Month, 6);
+        _byCategory = ReportBuilder.ExpensesByCategory(txs, Ledger.State.Categories, m.Year, m.Month);
+        _budgets = ReportBuilder.Budgets(Ledger.State, LedgerService.Today, m.Year, m.Month);
+        _uncategorized = txs.Count(t => t.CategoryId is null && t.Date.Year == m.Year && t.Date.Month == m.Month);
+    }
+
+    private static string Pct(double share) => (Math.Clamp(share, 0, 1) * 100).ToString("0.#", CultureInfo.InvariantCulture) + "%";
+    public void Dispose() => Service.Changed -= Recompute;
+
+    private static string BudgetHint(BudgetProgress b) => b.Status switch
+    {
+        BudgetStatus.Estourado => $"Passou {Fmt.Brl(b.Spent - b.Limit)} do limite.",
+        BudgetStatus.Atencao => $"No ritmo atual, fecha o mês em {Fmt.Brl(b.Projected)}.",
+        _ => $"Ainda dá pra gastar {Fmt.Brl(b.Limit - b.Spent)}.",
+    };
+}

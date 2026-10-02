@@ -1,0 +1,13 @@
+<Router AppAssembly="@typeof(App).Assembly">
+    <Found Context="routeData">
+        <RouteView RouteData="@routeData" DefaultLayout="@typeof(MainLayout)" />
+        <FocusOnNavigate RouteData="@routeData" Selector="h1" />
+    </Found>
+    <NotFound>
+        <PageTitle>Página não encontrada · Fluxo</PageTitle>
+        <LayoutView Layout="@typeof(MainLayout)">
+            <h1>Essa página não existe</h1>
+            <p><a href="">Voltar pro painel</a></p>
+        </LayoutView>
+    </NotFound>
+</Router>

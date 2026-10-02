@@ -1,0 +1,56 @@
+@* Entradas x saídas por mês, desenhado em SVG puro com a escala do ChartMath. *@
+
+<figure class="chart">
+    <svg viewBox="0 0 @W @H" role="img" aria-label="Entradas e saídas dos últimos meses">
+        @foreach (var tick in Ticks)
+        {
+            var y = Y(tick);
+            <g>
+            <line x1="@Left" x2="@(W - 8)" y1="@ChartMath.F(y)" y2="@ChartMath.F(y)" class="grid" />
+            <text x="@(Left - 8)" y="@ChartMath.F(y + 4)" class="axis" text-anchor="end">@Fmt.Compact(tick)</text>
+            </g>
+        }
+        @for (var i = 0; i < Months.Count; i++)
+        {
+            var m = Months[i];
+            var slot = (W - Left - 8) / (double)Months.Count;
+            var x = Left + i * slot + slot * 0.18;
+            var bw = slot * 0.3;
+            var inc = (double)m.Income.ToDecimal();
+            var exp = (double)m.Expense.ToDecimal();
+            <g>
+            <rect x="@ChartMath.F(x)" y="@ChartMath.F(Y(inc))" width="@ChartMath.F(bw)" height="@ChartMath.F(Bottom - Y(inc))" rx="3" class="bar-in">
+                <title>@m.Label: entrou @Fmt.Brl(m.Income)</title>
+            </rect>
+            <rect x="@ChartMath.F(x + bw + 4)" y="@ChartMath.F(Y(exp))" width="@ChartMath.F(bw)" height="@ChartMath.F(Bottom - Y(exp))" rx="3" class="bar-out">
+                <title>@m.Label: saiu @Fmt.Brl(m.Expense)</title>
+            </rect>
+            <text x="@ChartMath.F(x + bw + 2)" y="@(H - 6)" class="axis" text-anchor="middle">@m.Label</text>
+            </g>
+        }
+    </svg>
+    <figcaption class="legend">
+        <span><i class="dot in"></i>Entradas</span>
+        <span><i class="dot out"></i>Saídas</span>
+    </figcaption>
+</figure>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<MonthSummary> Months { get; set; } = [];
+
+    private const int W = 440, H = 250, Left = 62, Top = 12, Bottom = 222;
+    private double _max, _step;
+
+    private IEnumerable<double> Ticks
+    {
+        get { for (var t = 0.0; t <= _max + 0.0001; t += _step) yield return t; }
+    }
+
+    protected override void OnParametersSet()
+    {
+        var biggest = Months.Count == 0 ? 0 : Months.Max(m => (double)Math.Max(m.Income.ToDecimal(), m.Expense.ToDecimal()));
+        (_max, _step) = ChartMath.NiceScale(biggest);
+    }
+
+    private double Y(double value) => Bottom - value / _max * (Bottom - Top);
+}

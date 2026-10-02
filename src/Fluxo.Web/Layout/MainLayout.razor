@@ -1,0 +1,54 @@
+@inherits LayoutComponentBase
+@implements IDisposable
+@inject LedgerService Service
+
+<div class="shell">
+    <header class="topbar">
+        <a class="brand" href="">Fluxo<span>finanças pessoais</span></a>
+        <nav class="tabs" aria-label="Seções">
+            <NavLink href="" Match="NavLinkMatch.All">Painel</NavLink>
+            <NavLink href="lancamentos">Lançamentos</NavLink>
+            <NavLink href="importar">Importar</NavLink>
+            <NavLink href="metas">Metas</NavLink>
+            <NavLink href="regras">Regras</NavLink>
+        </nav>
+    </header>
+
+    @if (Service.IsSample)
+    {
+        <div class="banner">
+            Você está vendo <strong>dados de exemplo</strong>, inventados pra demonstração.
+            <button class="link" @onclick="Service.ClearAsync">Apagar e começar com os meus</button>
+        </div>
+    }
+    @if (Service.StorageError is not null)
+    {
+        <div class="banner warn">@Service.StorageError</div>
+    }
+
+    <main class="content">
+        @if (!Service.Loaded)
+        {
+            <p class="muted">Carregando seus dados…</p>
+        }
+        else
+        {
+            @Body
+        }
+    </main>
+
+    <footer class="foot">
+        Seus dados ficam só neste navegador. Nada é enviado pra servidor nenhum.
+    </footer>
+</div>
+
+@code {
+    protected override async Task OnInitializedAsync()
+    {
+        Service.Changed += OnChanged;
+        await Service.LoadAsync();
+    }
+
+    private void OnChanged() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Service.Changed -= OnChanged;
+}

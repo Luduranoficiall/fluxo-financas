@@ -1,0 +1,34 @@
+@* Gastos do mês por categoria. Geometria dos arcos vem do ChartMath (testado). *@
+
+<div class="donut">
+    <svg viewBox="0 0 200 200" role="img" aria-label="Gastos por categoria">
+        @foreach (var s in _slices)
+        {
+            <path d="@s.Path" fill="@s.Color" fill-rule="evenodd" />
+        }
+        <text x="100" y="96" text-anchor="middle" class="donut-label">gastou</text>
+        <text x="100" y="118" text-anchor="middle" class="donut-total">@Fmt.Brl(Total)</text>
+    </svg>
+    <ul class="donut-legend">
+        @foreach (var t in Totals)
+        {
+            <li>
+                <i class="dot" style="background:@(t.Category?.Color ?? NoCategoryColor)"></i>
+                <span class="name">@(t.Category?.Name ?? "Sem categoria")</span>
+                <span class="num">@Fmt.Brl(t.Total)</span>
+                <span class="share">@Fmt.Percent(t.Share)</span>
+            </li>
+        }
+    </ul>
+</div>
+
+@code {
+    [Parameter, EditorRequired] public IReadOnlyList<CategoryTotal> Totals { get; set; } = [];
+
+    private const string NoCategoryColor = "#B8BEC6";
+    private IReadOnlyList<DonutSlice> _slices = [];
+    private Money Total => Totals.Aggregate(Money.Zero, (acc, t) => acc + t.Total);
+
+    protected override void OnParametersSet() =>
+        _slices = ChartMath.Donut(Totals.Select(t => ((double)t.Total.Cents, t.Category?.Color ?? NoCategoryColor)).ToList(), 100, 100, 92, 62);
+}

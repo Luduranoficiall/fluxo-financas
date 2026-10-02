@@ -1,0 +1,98 @@
+@page "/lancamentos"
+@implements IDisposable
+@inject LedgerService Service
+
+<PageTitle>Lançamentos · Fluxo</PageTitle>
+
+<div class="pagehead">
+    <h1>Lançamentos</h1>
+    <MonthNav />
+</div>
+
+<div class="filters">
+    <input id="busca" type="search" placeholder="Buscar na descrição" @bind="_search" @bind:event="oninput" aria-label="Buscar na descrição" />
+    <label class="check"><input id="sem-categoria" type="checkbox" @bind="_onlyUncategorized" /> Só sem categoria</label>
+</div>
+
+@if (_toast is not null)
+{
+    <div class="toast" role="status">@_toast</div>
+}
+
+@if (Rows.Count == 0)
+{
+    <p class="muted">Nada por aqui neste mês@(_onlyUncategorized || _search.Length > 0 ? " com esse filtro" : "").</p>
+}
+else
+{
+    <div class="tablewrap">
+        <table class="txs">
+            <thead><tr><th>Data</th><th>Descrição</th><th>Categoria</th><th class="num">Valor</th></tr></thead>
+            <tbody>
+                @foreach (var t in Rows)
+                {
+                    <tr>
+                        <td class="date">@Fmt.Date(t.Date)</td>
+                        <td class="desc">@t.Description</td>
+                        <td>
+                            <select id="cat-@t.Id" value="@(t.CategoryId ?? "")" @onchange="e => Change(t, e.Value as string)" aria-label="Categoria de @t.Description"
+                                    class="@(t.CategoryId is null ? "unset" : "")">
+                                <option value="">Sem categoria</option>
+                                @foreach (var c in Categories(t))
+                                {
+                                    <option value="@c.Id">@c.Name</option>
+                                }
+                            </select>
+                            @if (t.CategorySource == CategorySource.Rule)
+                            {
+                                <span class="tag" title="Categoria escolhida por uma regra">auto</span>
+                            }
+                        </td>
+                        <td class="num @(t.Amount.IsNegative ? "out" : "in")">@Fmt.Brl(t.Amount)</td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+    <p class="hint">@Rows.Count lançamento(s). Total: @Fmt.Brl(Rows.Aggregate(Money.Zero, (a, t) => a + t.Amount))</p>
+}
+
+@code {
+    [SupplyParameterFromQuery(Name = "sem-categoria")] public int? OnlyUncategorizedQuery { get; set; }
+
+    private string _search = "";
+    private bool _onlyUncategorized;
+    private string? _toast;
+
+    protected override void OnInitialized()
+    {
+        _onlyUncategorized = OnlyUncategorizedQuery == 1;
+        Service.Changed += Refresh;
+    }
+
+    private List<Transaction> Rows => Service.Ledger.Transactions
+        .Where(t => t.Date.Year == Service.Month.Year && t.Date.Month == Service.Month.Month)
+        .Where(t => !_onlyUncategorized || t.CategoryId is null)
+        .Where(t => _search.Length == 0 || TextNormalizer.Normalize(t.Description).Contains(TextNormalizer.Normalize(_search)))
+        .OrderByDescending(t => t.Date).ThenBy(t => t.Description)
+        .ToList();
+
+    // Entrada só oferece categoria de receita e saída só de despesa: menos opção, menos erro.
+    private IEnumerable<Category> Categories(Transaction t) => Service.Ledger.State.Categories
+        .Where(c => c.Kind == (t.Amount.IsNegative ? CategoryKind.Despesa : CategoryKind.Receita));
+
+    private void Change(Transaction t, string? categoryId)
+    {
+        var id = string.IsNullOrEmpty(categoryId) ? null : categoryId;
+        var result = Service.Ledger.Recategorize(t.Id, id);
+        var name = Service.Ledger.State.Categories.FirstOrDefault(c => c.Id == id)?.Name;
+        _toast = result.LearnedPattern is null || name is null
+            ? null
+            : result.AlsoUpdated > 0
+                ? $"Aprendi: \"{result.LearnedPattern}\" vai pra {name}. Atualizei mais {result.AlsoUpdated} lançamento(s)."
+                : $"Aprendi: \"{result.LearnedPattern}\" vai pra {name} daqui pra frente.";
+    }
+
+    private void Refresh() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Service.Changed -= Refresh;
+}

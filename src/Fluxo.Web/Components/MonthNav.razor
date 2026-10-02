@@ -1,0 +1,16 @@
+@implements IDisposable
+@inject LedgerService Service
+
+<div class="monthnav" role="group" aria-label="Mês">
+    <button class="icon" @onclick="() => Service.SetMonth(Service.Month.AddMonths(-1))" aria-label="Mês anterior">‹</button>
+    <span class="month" aria-live="polite">@Fmt.MonthName(Service.Month)</span>
+    <button class="icon" @onclick="() => Service.SetMonth(Service.Month.AddMonths(1))" aria-label="Próximo mês">›</button>
+</div>
+
+@code {
+    // Sem parâmetro, o Blazor não redesenha este componente quando o pai redesenha. O mês pode
+    // mudar por fora (importação, dados de exemplo), então ele escuta o serviço direto.
+    protected override void OnInitialized() => Service.Changed += Refresh;
+    private void Refresh() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Service.Changed -= Refresh;
+}

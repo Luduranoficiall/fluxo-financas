@@ -1,0 +1,109 @@
+@page "/importar"
+@using System.Text
+@inject LedgerService Service
+
+<PageTitle>Importar extrato · Fluxo</PageTitle>
+
+<h1>Importar extrato</h1>
+<p class="lede">
+    No app ou no site do banco, procure "exportar extrato" e escolha <strong>OFX</strong> (o mais completo)
+    ou <strong>CSV</strong>. Pode importar o mesmo arquivo de novo sem medo: o que já entrou não duplica.
+</p>
+
+<label class="drop" for="arquivo">
+    <InputFile @key="_inputKey" id="arquivo" OnChange="OnFiles" multiple accept=".ofx,.qfx,.csv,.txt" />
+    <strong>Escolher arquivo</strong>
+    <span>OFX ou CSV, até 5 MB cada</span>
+</label>
+
+@if (_busy)
+{
+    <p class="muted">Lendo…</p>
+}
+
+@foreach (var r in _results)
+{
+    <article class="panel result">
+        <h2>@r.FileName</h2>
+        @if (r.Fatal is not null)
+        {
+            <p class="out">@r.Fatal</p>
+        }
+        else
+        {
+            <ul class="stats">
+                <li><strong>@r.Summary!.Added</strong> novo(s)</li>
+                <li><strong>@r.Summary.Duplicates</strong> já estavam aqui</li>
+                <li><strong>@r.Summary.AutoCategorized</strong> categorizado(s) sozinho(s)</li>
+            </ul>
+            @if (r.Summary.Errors.Count > 0)
+            {
+                <details>
+                    <summary>@r.Summary.Errors.Count linha(s) não entraram</summary>
+                    <ul class="errors">
+                        @foreach (var e in r.Summary.Errors.Take(50))
+                        {
+                            <li>@e.Message</li>
+                        }
+                    </ul>
+                </details>
+            }
+            @if (r.Summary.Added > 0)
+            {
+                <a class="btn primary" href="">Ver no painel</a>
+            }
+        }
+    </article>
+}
+
+@code {
+    private const long MaxBytes = 5 * 1024 * 1024;
+    private readonly List<FileResult> _results = [];
+    private bool _busy;
+    // Recria o campo depois de cada importação: sem isso, escolher o mesmo arquivo de novo não
+    // dispara mudança no navegador e a pessoa fica sem resposta.
+    private int _inputKey;
+
+    private sealed record FileResult(string FileName, ImportSummary? Summary, string? Fatal);
+
+    private async Task OnFiles(InputFileChangeEventArgs e)
+    {
+        _busy = true;
+        _results.Clear();
+        foreach (var file in e.GetMultipleFiles(10))
+        {
+            if (file.Size > MaxBytes)
+            {
+                _results.Add(new(file.Name, null, "Arquivo maior que 5 MB. Exporte um período menor."));
+                continue;
+            }
+            using var ms = new MemoryStream();
+            await file.OpenReadStream(MaxBytes).CopyToAsync(ms);
+            var bytes = ms.ToArray();
+
+            var isOfx = file.Name.EndsWith(".ofx", StringComparison.OrdinalIgnoreCase)
+                || file.Name.EndsWith(".qfx", StringComparison.OrdinalIgnoreCase)
+                || Encoding.ASCII.GetString(bytes, 0, (int)Math.Min(bytes.Length, 2000)).Contains("<OFX>", StringComparison.OrdinalIgnoreCase);
+
+            var parsed = isOfx ? OfxParser.Parse(bytes) : CsvParser.Parse(DecodeText(bytes));
+            if (parsed.Entries.Count == 0)
+            {
+                _results.Add(new(file.Name, null, parsed.Errors.FirstOrDefault()?.Message ?? "Não achei nenhum lançamento nesse arquivo."));
+                continue;
+            }
+            _results.Add(new(file.Name, Service.Ledger.Import(parsed, isOfx ? "ofx" : "csv"), null));
+        }
+        Service.FocusLatestMonth();
+        _busy = false;
+        _inputKey++;
+    }
+
+    /// <summary>CSV de banco às vezes vem em Windows-1252. Se UTF-8 gerar caractere inválido, troca.</summary>
+    private static string DecodeText(byte[] bytes)
+    {
+        var utf8 = new UTF8Encoding(false, throwOnInvalidBytes: false).GetString(bytes);
+        if (!utf8.Contains('�')) return utf8;
+        Encoding.RegisterProvider(CodePagesEncodingProvider.Instance);
+        return Encoding.GetEncoding(1252).GetString(bytes);
+    }
+}

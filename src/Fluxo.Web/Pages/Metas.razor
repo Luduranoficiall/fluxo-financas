@@ -1,0 +1,96 @@
+@page "/metas"
+@implements IDisposable
+@inject LedgerService Service
+
+<PageTitle>Metas · Fluxo</PageTitle>
+
+<h1>Metas</h1>
+
+<section class="panel">
+    <h2>Limite por categoria</h2>
+    <p class="hint">Quanto você quer gastar no máximo por mês. Deixe vazio pra não ter limite.</p>
+    <div class="limits">
+        @foreach (var c in Service.Ledger.State.Categories.Where(c => c.Kind == CategoryKind.Despesa))
+        {
+            var current = Service.Ledger.State.Budgets.FirstOrDefault(b => b.CategoryId == c.Id)?.MonthlyLimit;
+            <label class="limit" for="limite-@c.Id">
+                <span><i class="dot" style="background:@c.Color"></i>@c.Name</span>
+                <span class="money">
+                    R$
+                    <input id="limite-@c.Id" inputmode="decimal" placeholder="sem limite"
+                           value="@(current is null ? "" : PtBr.Number((double)current.Value.ToDecimal(), 2))"
+                           @onchange="e => SetLimit(c.Id, e.Value as string)" />
+                </span>
+            </label>
+        }
+    </div>
+</section>
+
+<section class="panel">
+    <h2>Metas de economia</h2>
+    @foreach (var g in Service.Ledger.State.Goals.Select(g => ReportBuilder.Goal(g, LedgerService.Today)))
+    {
+        <div class="goal">
+            <div class="row">
+                <strong>@g.Goal.Name</strong>
+                <button class="link danger" @onclick="() => Service.Ledger.RemoveGoal(g.Goal.Id)">Remover</button>
+            </div>
+            <p class="hint">
+                @Fmt.Brl(g.Goal.Saved) de @Fmt.Brl(g.Goal.Target) até @g.Goal.Deadline.ToString("dd/MM/yyyy").
+                @(g.Done ? "Meta batida." : $"Faltam {g.MonthsLeft} mês(es): guarde {Fmt.Brl(g.MonthlyNeeded)} por mês.")
+            </p>
+            <label class="inline" for="guardado-@g.Goal.Id">
+                Já guardei R$
+                <input id="guardado-@g.Goal.Id" inputmode="decimal" value="@PtBr.Number((double)g.Goal.Saved.ToDecimal(), 2)"
+                       @onchange="e => SetSaved(g.Goal, e.Value as string)" />
+            </label>
+        </div>
+    }
+
+    <EditForm Model="_new" OnValidSubmit="AddGoal" class="goalform">
+        <h3>Nova meta</h3>
+        <label for="meta-nome">Nome<InputText id="meta-nome" @bind-Value="_new.Name" placeholder="Reserva de emergência" /></label>
+        <label for="meta-alvo">Quanto quer juntar (R$)<InputText id="meta-alvo" @bind-Value="_new.Target" inputmode="decimal" placeholder="10.000,00" /></label>
+        <label for="meta-ja">Já tem guardado (R$)<InputText id="meta-ja" @bind-Value="_new.Saved" inputmode="decimal" placeholder="0,00" /></label>
+        <label for="meta-prazo">Até quando<InputDate id="meta-prazo" @bind-Value="_new.Deadline" /></label>
+        @if (_error is not null) { <p class="out">@_error</p> }
+        <button class="btn primary" type="submit">Criar meta</button>
+    </EditForm>
+</section>
+
+@code {
+    private sealed class GoalForm
+    {
+        public string Name { get; set; } = "";
+        public string Target { get; set; } = "";
+        public string Saved { get; set; } = "";
+        public DateOnly Deadline { get; set; } = LedgerService.Today.AddMonths(12);
+    }
+
+    private GoalForm _new = new();
+    private string? _error;
+
+    protected override void OnInitialized() => Service.Changed += Refresh;
+
+    private void SetLimit(string categoryId, string? raw) =>
+        Service.Ledger.SetBudget(categoryId, Money.TryParse(raw, out var m) ? m.Abs() : Money.Zero);
+
+    private void SetSaved(SavingsGoal goal, string? raw)
+    {
+        if (Money.TryParse(raw, out var m)) Service.Ledger.SaveGoal(goal with { Saved = m.Abs() });
+    }
+
+    private void AddGoal()
+    {
+        _error = null;
+        if (string.IsNullOrWhiteSpace(_new.Name)) { _error = "Dê um nome pra meta."; return; }
+        if (!Money.TryParse(_new.Target, out var target) || target <= Money.Zero) { _error = "Coloque quanto quer juntar."; return; }
+        var saved = Money.TryParse(_new.Saved, out var s) ? s.Abs() : Money.Zero;
+        if (_new.Deadline <= LedgerService.Today) { _error = "O prazo precisa ser uma data futura."; return; }
+        Service.Ledger.SaveGoal(new SavingsGoal("", _new.Name.Trim(), target, saved, _new.Deadline));
+        _new = new();
+    }
+
+    private void Refresh() => InvokeAsync(StateHasChanged);
+    public void Dispose() => Service.Changed -= Refresh;
+}

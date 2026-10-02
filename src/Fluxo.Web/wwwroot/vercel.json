@@ -1,0 +1,3 @@
+{
+  "rewrites": [{ "source": "/((?!_framework|css|.*\\..*).*)", "destination": "/index.html" }]
+}
