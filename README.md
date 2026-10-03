@@ -59,6 +59,9 @@ tests/
 Tem um botão de **dados de exemplo** com quatro meses de extrato fictício, marcado como exemplo
 na tela, pra ver o app funcionando sem importar nada.
 
+Toda a regra e toda a tela são C#, sem nenhum arquivo JavaScript próprio. Fora do C# só tem o
+CSS do visual e a página HTML que carrega o app, que todo projeto Blazor precisa.
+
 ## Rodar
 
 Precisa do .NET 8 SDK.
