@@ -42,7 +42,7 @@ src/
     Persistence/     JSON do estado
   Fluxo.Web/         Blazor WebAssembly: telas e armazenamento no navegador (localStorage)
 tests/
-  Fluxo.Tests/       74 testes xUnit
+  Fluxo.Tests/       74 testes xUnit, rodando no GitHub Actions a cada envio
 ```
 
 ## Telas
@@ -68,12 +68,12 @@ dotnet test                       # 74 testes
 dotnet run --project src/Fluxo.Web
 ```
 
-Publicar como site estático:
+Publicar:
 
-```bash
-dotnet publish src/Fluxo.Web -c Release -o publish
-# publish/wwwroot é o site inteiro. O vercel.json já manda as rotas do app pro index.html.
-```
+- **Vercel:** importe o repositório e pronto. O `vercel.json` da raiz instala o .NET 8 no build,
+  publica o Blazor e manda as rotas do app pro `index.html`.
+- **Qualquer hospedagem estática:** `dotnet publish src/Fluxo.Web -c Release -o publish` e suba a
+  pasta `publish/wwwroot`, com as rotas desconhecidas apontando pro `index.html`.
 
 ## Decisões assumidas
 
